@@ -11,16 +11,18 @@ type mockExecutor struct {
 	result json.RawMessage
 	err    error
 	method string
+	vmName string
 }
 
-func (m *mockExecutor) Execute(_ context.Context, method string, _ any) (json.RawMessage, error) {
+func (m *mockExecutor) Execute(_ context.Context, vmName, method string, _ any) (json.RawMessage, error) {
+	m.vmName = vmName
 	m.method = method
 	return m.result, m.err
 }
 
 func newClient(raw json.RawMessage, err error) (*Client, *mockExecutor) {
 	m := &mockExecutor{result: raw, err: err}
-	return &Client{agent: m}, m
+	return &Client{agent: m, vmName: "epsylon"}, m
 }
 
 var errAgent = errors.New("agent error")

@@ -14,6 +14,7 @@ type AgentClient struct {
 }
 
 type agentRequest struct {
+	VM     string `json:"vm"`
 	Method string `json:"method"`
 	Args   any    `json:"args,omitempty"`
 }
@@ -50,8 +51,8 @@ func (c *HostConn) Agent(port int) (*AgentClient, error) {
 }
 
 // Execute encodes the request, decodes the req and return the final result
-func (a *AgentClient) Execute(ctx context.Context, method string, args any) (json.RawMessage, error) {
-	if err := a.enc.Encode(agentRequest{Method: method, Args: args}); err != nil {
+func (a *AgentClient) Execute(ctx context.Context, vmName, method string, args any) (json.RawMessage, error) {
+	if err := a.enc.Encode(agentRequest{VM: vmName, Method: method, Args: args}); err != nil {
 		return nil, fmt.Errorf("sending command: %w", err)
 	}
 	var resp agentResponse

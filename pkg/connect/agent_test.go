@@ -67,7 +67,7 @@ func TestExecute(t *testing.T) {
 			_ = enc.Encode(agentResponse{Result: json.RawMessage(`{"state":"running"}`)})
 		}()
 
-		raw, err := agent.Execute(context.Background(), "query-status", nil)
+		raw, err := agent.Execute(context.Background(), "epsylon", "query-status", nil)
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
@@ -93,7 +93,7 @@ func TestExecute(t *testing.T) {
 			_ = enc.Encode(agentResponse{Error: "vm not found"})
 		}()
 
-		_, err := agent.Execute(context.Background(), "query-status", nil)
+		_, err := agent.Execute(context.Background(), "epsylon", "query-status", nil)
 		if err == nil {
 			t.Fatal("expected error, got nil")
 		}
@@ -110,7 +110,7 @@ func TestExecute(t *testing.T) {
 			server.Close()
 		}()
 
-		_, err := agent.Execute(context.Background(), "query-status", nil)
+		_, err := agent.Execute(context.Background(), "epsylon", "query-status", nil)
 		if err == nil {
 			t.Fatal("expected error, got nil")
 		}
