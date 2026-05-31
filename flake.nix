@@ -16,9 +16,9 @@
     in
     {
       packages = forAllSystems (pkgs: {
-        aphelion       = pkgs.callPackage ./default.nix { pname = "aphelion"; };
+        aphelion       = pkgs.callPackage ./default.nix { pname = "aphelion"; withCompletion = true; };
         aphelion-agent = pkgs.callPackage ./default.nix { pname = "aphelion-agent"; };
-        default        = pkgs.callPackage ./default.nix { pname = "aphelion"; };
+        default        = pkgs.callPackage ./default.nix { pname = "aphelion"; withCompletion = true; };
       });
       devShells = forAllSystems (pkgs: {
         default = import ./shell.nix { inherit pkgs; };
