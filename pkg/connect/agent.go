@@ -87,6 +87,21 @@ func (a *AgentClient) ListVMs(ctx context.Context) ([]string, error) {
 	return Parse[[]string](raw)
 }
 
+// VMMetricsSample holds the latest collected metrics for one VM.
+type VMMetricsSample struct {
+	Up          bool    `json:"up"`
+	MemoryBytes uint64  `json:"memory_bytes"`
+	CPUPercent  float64 `json:"cpu_percent"`
+}
+
+func (a *AgentClient) Metrics(ctx context.Context) (map[string]VMMetricsSample, error) {
+	raw, err := a.Execute(ctx, "", "get-metrics", nil)
+	if err != nil {
+		return nil, err
+	}
+	return Parse[map[string]VMMetricsSample](raw)
+}
+
 // Console represents the machine console for the session
 func (a *AgentClient) Console(ctx context.Context, vmName string) (Session, error) {
 	return nil, fmt.Errorf("not implemented")

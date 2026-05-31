@@ -11,7 +11,7 @@ buildGoModule {
   version = "0.1.0";
   src = ./.;
   subPackages = [ "cmd/${pname}" ];
-  vendorHash = "sha256-Xfzc42D8ow1ku/lFPwz6T7uWCtcKFxevxNCBYBO2iYk=";
+  vendorHash = "sha256-ysyPY2l19OISyIETAE3o3q41yxdeRJZNl0aeJJ5SEQ4=";
 
   env.CGO_ENABLED = 0;
   ldflags = [

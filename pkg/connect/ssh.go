@@ -12,10 +12,10 @@ type sshSession struct {
 	stdout  io.Reader
 }
 
-// OpenSSH instantiates an ssh tunnel
-func (c *HostConn) OpenSSH(vmAddr, username string) (Session, error) {
+// OpenSSH opens an interactive SSH session to vmAddr tunnelled over the host connection.
+// width and height are the initial terminal dimensions.
+func (c *HostConn) OpenSSH(vmAddr, username string, width, height int) (Session, error) {
 	tunn, err := c.client.Dial("tcp", vmAddr)
-
 	if err != nil {
 		return nil, err
 	}
@@ -30,14 +30,14 @@ func (c *HostConn) OpenSSH(vmAddr, username string) (Session, error) {
 		return nil, fmt.Errorf("ssh handshake with %s: %w", vmAddr, err)
 	}
 	vmClient := ssh.NewClient(sshClientConn, chans, reqs)
-	sess, err := newSSHSession(vmClient)
+	sess, err := newSSHSession(vmClient, width, height)
 	if err != nil {
 		return nil, err
 	}
 	return sess, nil
 }
 
-func newSSHSession(client *ssh.Client) (*sshSession, error) {
+func newSSHSession(client *ssh.Client, width, height int) (*sshSession, error) {
 	s, err := client.NewSession()
 	if err != nil {
 		return nil, fmt.Errorf("creating session: %w", err)
@@ -51,7 +51,7 @@ func newSSHSession(client *ssh.Client) (*sshSession, error) {
 		_ = s.Close()
 		return nil, fmt.Errorf("stdout pipe: %w", err)
 	}
-	if err := s.RequestPty("xterm-256color", 24, 80, ssh.TerminalModes{}); err != nil {
+	if err := s.RequestPty("xterm-256color", height, width, ssh.TerminalModes{}); err != nil {
 		_ = s.Close()
 		return nil, fmt.Errorf("requesting pty: %w", err)
 	}

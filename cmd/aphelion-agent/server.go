@@ -22,6 +22,7 @@ type vmExecutor interface {
 	Execute(vmName, method string, args any) (json.RawMessage, error)
 	List() []string
 	GetAddr(vmName string) (string, error)
+	Metrics() map[string]VMMetricsSample
 }
 
 type Server struct {
@@ -76,6 +77,12 @@ func (s *Server) handle(conn net.Conn) {
 
 		if req.Method == "list-vms" {
 			result, _ := json.Marshal(s.vms.List())
+			_ = enc.Encode(agentResponse{Result: result})
+			continue
+		}
+
+		if req.Method == "get-metrics" {
+			result, _ := json.Marshal(s.vms.Metrics())
 			_ = enc.Encode(agentResponse{Result: result})
 			continue
 		}

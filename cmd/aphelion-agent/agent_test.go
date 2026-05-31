@@ -125,6 +125,8 @@ func (m *mockVMExecutor) List() []string {
 	return m.vms
 }
 
+func (m *mockVMExecutor) Metrics() map[string]VMMetricsSample { return nil }
+
 func (m *mockVMExecutor) GetAddr(vmName string) (string, error) {
 	if m.err != nil {
 		return "", m.err

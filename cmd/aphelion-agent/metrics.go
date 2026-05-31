@@ -84,47 +84,87 @@ func cgroupCPU(cgroupBase, vmName string) (map[string]uint64, error) {
 	return stats, nil
 }
 
-func collect(vms *VMManager, cgroupBase string) {
-	for vmName := range vms.monitors {
-		raw, err := vms.Execute(vmName, "query-status", nil)
-		if err != nil {
-			vmUp.WithLabelValues(vmName).Set(0)
-			continue
+func (m *VMManager) collect() {
+	m.rediscover()
+
+	type rawData struct {
+		up  bool
+		mem uint64
+		cpu map[string]uint64
+	}
+
+	vmNames := m.knownVMs()
+	gathered := make(map[string]rawData, len(vmNames))
+	now := time.Now()
+
+	for _, vmName := range vmNames {
+		var d rawData
+
+		raw, err := m.Execute(vmName, "query-status", nil)
+		if err == nil {
+			var status struct {
+				Running bool `json:"running"`
+			}
+			if err := json.Unmarshal(raw, &status); err == nil {
+				d.up = status.Running
+			}
 		}
-		var status struct {
-			Running bool `json:"running"`
+
+		if mem, err := cgroupMemory(m.cgroupBase, vmName); err == nil {
+			d.mem = mem
 		}
-		if err := json.Unmarshal(raw, &status); err != nil || !status.Running {
-			vmUp.WithLabelValues(vmName).Set(0)
-		} else {
+
+		if cpu, err := cgroupCPU(m.cgroupBase, vmName); err == nil {
+			d.cpu = cpu
+		}
+
+		gathered[vmName] = d
+	}
+
+	// Update Prometheus gauges.
+	for vmName, d := range gathered {
+		if d.up {
 			vmUp.WithLabelValues(vmName).Set(1)
+		} else {
+			vmUp.WithLabelValues(vmName).Set(0)
 		}
-
-		if mem, err := cgroupMemory(cgroupBase, vmName); err == nil {
-			vmMem.WithLabelValues(vmName).Set(float64(mem))
-		}
-
-		if cpu, err := cgroupCPU(cgroupBase, vmName); err == nil {
-			if v, ok := cpu["usage_usec"]; ok {
-				vmCPUUsage.WithLabelValues(vmName).Set(float64(v))
-			}
-			if v, ok := cpu["user_usec"]; ok {
-				vmCPUUser.WithLabelValues(vmName).Set(float64(v))
-			}
-			if v, ok := cpu["system_usec"]; ok {
-				vmCPUSystem.WithLabelValues(vmName).Set(float64(v))
-			}
+		vmMem.WithLabelValues(vmName).Set(float64(d.mem))
+		if d.cpu != nil {
+			vmCPUUsage.WithLabelValues(vmName).Set(float64(d.cpu["usage_usec"]))
+			vmCPUUser.WithLabelValues(vmName).Set(float64(d.cpu["user_usec"]))
+			vmCPUSystem.WithLabelValues(vmName).Set(float64(d.cpu["system_usec"]))
 		}
 	}
+
+	// Compute CPU rate and store samples under lock.
+	m.mu.Lock()
+	elapsed := now.Sub(m.prevCPUTime).Seconds()
+	for vmName, d := range gathered {
+		sample := VMMetricsSample{Up: d.up, MemoryBytes: d.mem}
+		if d.cpu != nil {
+			usage := d.cpu["usage_usec"]
+			if prev, ok := m.prevCPU[vmName]; ok && elapsed > 0 {
+				delta := float64(int64(usage) - int64(prev))
+				if delta >= 0 {
+					sample.CPUPercent = delta / (elapsed * 1e6) * 100
+				}
+			}
+			m.prevCPU[vmName] = usage
+		}
+		m.lastMetrics[vmName] = sample
+	}
+	m.prevCPUTime = now
+	m.mu.Unlock()
 }
 
-func startMetrics(vms *VMManager, addr, cgroupBase string, interval time.Duration) {
+func startMetrics(vms *VMManager, addr string, interval time.Duration) {
 	registerMetrics()
+	vms.collect() // initial sample so metrics are available immediately
 
 	go func() {
 		for {
-			collect(vms, cgroupBase)
 			time.Sleep(interval)
+			vms.collect()
 		}
 	}()
 

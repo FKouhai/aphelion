@@ -1,7 +1,6 @@
 package main
 
 import (
-	"fmt"
 	"log"
 	"os"
 	"time"
@@ -34,20 +33,15 @@ func init() {
 func run(cmd *cobra.Command, args []string) error {
 	sockets, err := discoverVMs(vmBase)
 	if err != nil {
-		return fmt.Errorf("discovering vms: %w", err)
+		log.Printf("warning: initial vm discovery: %v", err)
+		sockets = make(map[string]string)
 	}
-	if len(sockets) == 0 {
-		return fmt.Errorf("no VMs found under %s", vmBase)
-	}
-	log.Printf("discovered %d VMs", len(sockets))
+	log.Printf("discovered %d VMs at startup", len(sockets))
 
-	vms, err := NewVMManager(sockets, cgroupBase)
-	if err != nil {
-		return fmt.Errorf("connecting to VMs: %w", err)
-	}
+	vms := NewVMManager(vmBase, sockets, cgroupBase)
 	defer vms.Close()
 
-	go startMetrics(vms, metricsAddr, cgroupBase, metricsInterval)
+	go startMetrics(vms, metricsAddr, metricsInterval)
 
 	server := NewServer(agentAddr, vms)
 	return server.Listen()

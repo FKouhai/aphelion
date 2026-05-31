@@ -9,14 +9,30 @@ import (
 	"regexp"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/digitalocean/go-qemu/qmp"
 )
 
+// VMMetricsSample holds the latest collected metrics for one VM.
+type VMMetricsSample struct {
+	Up          bool    `json:"up"`
+	MemoryBytes uint64  `json:"memory_bytes"`
+	CPUPercent  float64 `json:"cpu_percent"`
+}
+
 type VMManager struct {
-	monitors   map[string]*qmp.SocketMonitor
-	cgroupBase string
+	vmBase  string
+	sockMu  sync.RWMutex // protects sockets
+	sockets map[string]string
+	monMu   sync.RWMutex // protects monitors
+	monitors map[string]*qmp.SocketMonitor
+	cgroupBase  string
+	mu          sync.RWMutex // protects lastMetrics / prevCPU
+	lastMetrics map[string]VMMetricsSample
+	prevCPU     map[string]uint64
+	prevCPUTime time.Time
 }
 
 func discoverVMs(base string) (map[string]string, error) {
@@ -34,26 +50,64 @@ func discoverVMs(base string) (map[string]string, error) {
 	return sockets, err
 }
 
-func NewVMManager(sockets map[string]string, cgroupBase string) (*VMManager, error) {
-	monitors := make(map[string]*qmp.SocketMonitor)
-	for name, path := range sockets {
-		m, err := qmp.NewSocketMonitor("unix", path, 2*time.Second)
-		if err != nil {
-			return nil, fmt.Errorf("creating monitor for %s: %w", name, err)
-		}
-		if err := m.Connect(); err != nil {
-			return nil, fmt.Errorf("connecting to %s: %w", name, err)
-		}
-		monitors[name] = m
+func NewVMManager(vmBase string, sockets map[string]string, cgroupBase string) *VMManager {
+	m := &VMManager{
+		vmBase:      vmBase,
+		sockets:     sockets,
+		monitors:    make(map[string]*qmp.SocketMonitor),
+		cgroupBase:  cgroupBase,
+		lastMetrics: make(map[string]VMMetricsSample),
+		prevCPU:     make(map[string]uint64),
 	}
-	return &VMManager{monitors: monitors, cgroupBase: cgroupBase}, nil
+	for name := range sockets {
+		_ = m.connect(name) // best-effort; VMs may not be up yet
+	}
+	return m
+}
+
+// socketPath returns the path for a known VM, or ("", false) if unknown.
+func (m *VMManager) socketPath(name string) (string, bool) {
+	m.sockMu.RLock()
+	defer m.sockMu.RUnlock()
+	path, ok := m.sockets[name]
+	return path, ok
+}
+
+// knownVMs returns a snapshot of the known VM names.
+func (m *VMManager) knownVMs() []string {
+	m.sockMu.RLock()
+	defer m.sockMu.RUnlock()
+	names := make([]string, 0, len(m.sockets))
+	for name := range m.sockets {
+		names = append(names, name)
+	}
+	return names
+}
+
+// connect (re)establishes the QMP socket connection for a single VM.
+// Caller must not hold monMu or sockMu.
+func (m *VMManager) connect(name string) error {
+	path, ok := m.socketPath(name)
+	if !ok {
+		return fmt.Errorf("no socket path known for %s", name)
+	}
+	mon, err := qmp.NewSocketMonitor("unix", path, 2*time.Second)
+	if err != nil {
+		return err
+	}
+	if err := mon.Connect(); err != nil {
+		return err
+	}
+	m.monMu.Lock()
+	if old, exists := m.monitors[name]; exists {
+		_ = old.Disconnect()
+	}
+	m.monitors[name] = mon
+	m.monMu.Unlock()
+	return nil
 }
 
 func (m *VMManager) Execute(vmName, method string, args any) (json.RawMessage, error) {
-	monitor, ok := m.monitors[vmName]
-	if !ok {
-		return nil, fmt.Errorf("vm %q not found", vmName)
-	}
 	cmd, err := json.Marshal(struct {
 		Execute   string `json:"execute"`
 		Arguments any    `json:"arguments,omitempty"`
@@ -61,24 +115,49 @@ func (m *VMManager) Execute(vmName, method string, args any) (json.RawMessage, e
 	if err != nil {
 		return nil, fmt.Errorf("marshaling command: %w", err)
 	}
-	raw, err := monitor.Run(cmd)
-	if err != nil {
-		return nil, err
+
+	if _, known := m.socketPath(vmName); !known {
+		return nil, fmt.Errorf("vm %q not found", vmName)
 	}
-	var wrapper struct {
-		Return json.RawMessage `json:"return"`
+
+	// Lazy-connect if the monitor doesn't exist yet (VM wasn't up at startup).
+	m.monMu.RLock()
+	_, connected := m.monitors[vmName]
+	m.monMu.RUnlock()
+	if !connected {
+		if err := m.connect(vmName); err != nil {
+			return nil, err
+		}
 	}
-	if err := json.Unmarshal(raw, &wrapper); err != nil {
-		return nil, fmt.Errorf("unwrapping QMP response: %w", err)
+
+	// Attempt the command, reconnecting once if the monitor is stale.
+	for attempt := range 2 {
+		m.monMu.RLock()
+		monitor := m.monitors[vmName]
+		m.monMu.RUnlock()
+
+		raw, runErr := monitor.Run(cmd)
+		if runErr == nil {
+			var wrapper struct {
+				Return json.RawMessage `json:"return"`
+			}
+			if err := json.Unmarshal(raw, &wrapper); err != nil {
+				return nil, fmt.Errorf("unwrapping QMP response: %w", err)
+			}
+			return wrapper.Return, nil
+		}
+
+		if attempt == 0 {
+			_ = m.connect(vmName) // reconnect and retry once
+		} else {
+			return nil, runErr
+		}
 	}
-	return wrapper.Return, nil
+	return nil, fmt.Errorf("vm %q: unreachable", vmName)
 }
 
 func (m *VMManager) List() []string {
-	names := make([]string, 0, len(m.monitors))
-	for name := range m.monitors {
-		names = append(names, name)
-	}
+	names := m.knownVMs()
 	sort.Strings(names)
 	return names
 }
@@ -120,8 +199,40 @@ func (m *VMManager) GetAddr(vmName string) (string, error) {
 	return "", fmt.Errorf("MAC %s not in ARP table (try pinging the VM first)", mac)
 }
 
+// rediscover scans vmBase and registers any socket files not yet known.
+func (m *VMManager) rediscover() {
+	found, err := discoverVMs(m.vmBase)
+	if err != nil {
+		return
+	}
+	for name, path := range found {
+		m.sockMu.RLock()
+		_, known := m.sockets[name]
+		m.sockMu.RUnlock()
+		if known {
+			continue
+		}
+		m.sockMu.Lock()
+		m.sockets[name] = path
+		m.sockMu.Unlock()
+		_ = m.connect(name)
+	}
+}
+
+func (m *VMManager) Metrics() map[string]VMMetricsSample {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	out := make(map[string]VMMetricsSample, len(m.lastMetrics))
+	for k, v := range m.lastMetrics {
+		out[k] = v
+	}
+	return out
+}
+
 func (m *VMManager) Close() {
+	m.monMu.Lock()
+	defer m.monMu.Unlock()
 	for _, monitor := range m.monitors {
-		monitor.Disconnect()
+		_ = monitor.Disconnect()
 	}
 }
