@@ -51,6 +51,10 @@ func Dial(h config.Host) (*HostConn, error) {
 
 }
 
+func (c *HostConn) Close() error {
+	return c.client.Close()
+}
+
 func agentAuth() (ssh.AuthMethod, error) {
 	sock := os.Getenv("SSH_AUTH_SOCK")
 	if sock == "" {
