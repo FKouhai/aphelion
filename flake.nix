@@ -16,10 +16,21 @@
     in
     {
       packages = forAllSystems (pkgs: {
-        aphelion       = pkgs.callPackage ./default.nix { pname = "aphelion"; withCompletion = true; };
+        aphelion = pkgs.callPackage ./default.nix {
+          pname = "aphelion";
+          withCompletion = true;
+        };
         aphelion-agent = pkgs.callPackage ./default.nix { pname = "aphelion-agent"; };
-        default        = pkgs.callPackage ./default.nix { pname = "aphelion"; withCompletion = true; };
+        default = pkgs.callPackage ./default.nix {
+          pname = "aphelion";
+          withCompletion = true;
+        };
       });
+
+      overlays.default = import ./nix/overlay.nix;
+
+      nixosModules.default = import ./nix/module.nix self;
+
       devShells = forAllSystems (pkgs: {
         default = import ./shell.nix { inherit pkgs; };
       });
