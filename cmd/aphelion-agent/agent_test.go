@@ -114,10 +114,22 @@ func TestCgroupCPU(t *testing.T) {
 type mockVMExecutor struct {
 	result json.RawMessage
 	err    error
+	vms    []string
 }
 
 func (m *mockVMExecutor) Execute(vmName, method string, args any) (json.RawMessage, error) {
 	return m.result, m.err
+}
+
+func (m *mockVMExecutor) List() []string {
+	return m.vms
+}
+
+func (m *mockVMExecutor) GetAddr(vmName string) (string, error) {
+	if m.err != nil {
+		return "", m.err
+	}
+	return "192.168.0.100", nil
 }
 
 func serverPipe(t *testing.T, exec vmExecutor) net.Conn {
@@ -151,6 +163,55 @@ func TestServerHandleSuccess(t *testing.T) {
 	}
 	if string(resp.Result) != `{"running":true,"status":"running"}` {
 		t.Errorf("unexpected result: %s", resp.Result)
+	}
+}
+
+func TestServerHandleGetAddr(t *testing.T) {
+	client := serverPipe(t, &mockVMExecutor{})
+
+	enc := json.NewEncoder(client)
+	dec := json.NewDecoder(client)
+
+	_ = enc.Encode(agentRequest{VM: "epsylon", Method: "get-addr"})
+
+	var resp agentResponse
+	if err := dec.Decode(&resp); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if resp.Error != "" {
+		t.Errorf("unexpected error: %s", resp.Error)
+	}
+	var addr string
+	if err := json.Unmarshal(resp.Result, &addr); err != nil {
+		t.Fatalf("parsing result: %v", err)
+	}
+	if addr != "192.168.0.100" {
+		t.Errorf("unexpected addr: %s", addr)
+	}
+}
+
+func TestServerHandleListVMs(t *testing.T) {
+	client := serverPipe(t, &mockVMExecutor{vms: []string{"epsylon", "worker03"}})
+
+	enc := json.NewEncoder(client)
+	dec := json.NewDecoder(client)
+
+	_ = enc.Encode(agentRequest{Method: "list-vms"})
+
+	var resp agentResponse
+	if err := dec.Decode(&resp); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if resp.Error != "" {
+		t.Errorf("unexpected error: %s", resp.Error)
+	}
+
+	var vms []string
+	if err := json.Unmarshal(resp.Result, &vms); err != nil {
+		t.Fatalf("parsing result: %v", err)
+	}
+	if len(vms) != 2 || vms[0] != "epsylon" || vms[1] != "worker03" {
+		t.Errorf("unexpected vms: %v", vms)
 	}
 }
 

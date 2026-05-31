@@ -26,7 +26,7 @@ func init() {
 	rootCmd.PersistentFlags().IntVar(&agentPort, "agent-port", 7373, "port the aphelion-agent listens on")
 
 	rootCmd.AddCommand(statusCmd)
-	rootCmd.AddCommand(sshCmd)
+	rootCmd.AddCommand(attachCmd)
 	rootCmd.AddCommand(lifecycleCmd)
 }
 

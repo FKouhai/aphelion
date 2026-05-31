@@ -71,6 +71,22 @@ func (a *AgentClient) Close() error {
 	return a.conn.Close()
 }
 
+func (a *AgentClient) VMAddr(ctx context.Context, vmName string) (string, error) {
+	raw, err := a.Execute(ctx, vmName, "get-addr", nil)
+	if err != nil {
+		return "", err
+	}
+	return Parse[string](raw)
+}
+
+func (a *AgentClient) ListVMs(ctx context.Context) ([]string, error) {
+	raw, err := a.Execute(ctx, "", "list-vms", nil)
+	if err != nil {
+		return nil, err
+	}
+	return Parse[[]string](raw)
+}
+
 // Console represents the machine console for the session
 func (a *AgentClient) Console(ctx context.Context, vmName string) (Session, error) {
 	return nil, fmt.Errorf("not implemented")

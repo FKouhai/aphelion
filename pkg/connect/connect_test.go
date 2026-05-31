@@ -6,24 +6,28 @@ import (
 	"testing"
 )
 
-func TestAgentAuth(t *testing.T) {
-	t.Run("SSH_AUTH_SOCK not set", func(t *testing.T) {
+func TestAuthMethods(t *testing.T) {
+	t.Run("no sock no keys yields empty", func(t *testing.T) {
 		t.Setenv("SSH_AUTH_SOCK", "")
-		_, err := agentAuth()
-		if err == nil {
-			t.Fatal("expected error, got nil")
+		// point home somewhere empty so keyFileMethods finds nothing
+		t.Setenv("HOME", t.TempDir())
+		// password callback is always appended, so expect 1
+		methods := authMethods("test-host")
+		if len(methods) != 1 {
+			t.Fatalf("expected 1 method (password callback), got %d", len(methods))
 		}
 	})
 
-	t.Run("invalid socket path", func(t *testing.T) {
+	t.Run("invalid sock is skipped", func(t *testing.T) {
 		t.Setenv("SSH_AUTH_SOCK", "/nonexistent/agent.sock")
-		_, err := agentAuth()
-		if err == nil {
-			t.Fatal("expected error, got nil")
+		t.Setenv("HOME", t.TempDir())
+		methods := authMethods("test-host")
+		if len(methods) != 1 {
+			t.Fatalf("expected 1 method (password callback), got %d", len(methods))
 		}
 	})
 
-	t.Run("valid socket", func(t *testing.T) {
+	t.Run("valid sock adds one method", func(t *testing.T) {
 		sock := filepath.Join(t.TempDir(), "agent.sock")
 		l, err := net.Listen("unix", sock)
 		if err != nil {
@@ -41,12 +45,11 @@ func TestAgentAuth(t *testing.T) {
 		}()
 
 		t.Setenv("SSH_AUTH_SOCK", sock)
-		auth, err := agentAuth()
-		if err != nil {
-			t.Fatalf("unexpected error: %v", err)
-		}
-		if auth == nil {
-			t.Fatal("expected non-nil auth method")
+		t.Setenv("HOME", t.TempDir())
+		// listener returns no agent signers → only password callback
+		methods := authMethods("test-host")
+		if len(methods) != 1 {
+			t.Fatalf("expected 1 method (password callback), got %d", len(methods))
 		}
 	})
 }

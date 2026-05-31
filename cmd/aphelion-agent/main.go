@@ -41,7 +41,7 @@ func run(cmd *cobra.Command, args []string) error {
 	}
 	log.Printf("discovered %d VMs", len(sockets))
 
-	vms, err := NewVMManager(sockets)
+	vms, err := NewVMManager(sockets, cgroupBase)
 	if err != nil {
 		return fmt.Errorf("connecting to VMs: %w", err)
 	}

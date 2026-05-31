@@ -20,6 +20,8 @@ type agentResponse struct {
 
 type vmExecutor interface {
 	Execute(vmName, method string, args any) (json.RawMessage, error)
+	List() []string
+	GetAddr(vmName string) (string, error)
 }
 
 type Server struct {
@@ -59,6 +61,23 @@ func (s *Server) handle(conn net.Conn) {
 		var req agentRequest
 		if err := dec.Decode(&req); err != nil {
 			return
+		}
+
+		if req.Method == "get-addr" {
+			addr, err := s.vms.GetAddr(req.VM)
+			if err != nil {
+				_ = enc.Encode(agentResponse{Error: err.Error()})
+				continue
+			}
+			result, _ := json.Marshal(addr)
+			_ = enc.Encode(agentResponse{Result: result})
+			continue
+		}
+
+		if req.Method == "list-vms" {
+			result, _ := json.Marshal(s.vms.List())
+			_ = enc.Encode(agentResponse{Result: result})
+			continue
 		}
 
 		result, err := s.vms.Execute(req.VM, req.Method, req.Args)

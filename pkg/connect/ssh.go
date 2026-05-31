@@ -22,7 +22,7 @@ func (c *HostConn) OpenSSH(vmAddr, username string) (Session, error) {
 
 	sshClientConn, chans, reqs, err := ssh.NewClientConn(tunn, vmAddr, &ssh.ClientConfig{
 		User:            username,
-		Auth:            []ssh.AuthMethod{c.auth},
+		Auth:            authMethods(vmAddr),
 		HostKeyCallback: ssh.InsecureIgnoreHostKey(),
 	})
 	if err != nil {

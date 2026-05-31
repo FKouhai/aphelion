@@ -11,7 +11,13 @@ buildGoModule {
   version = "0.1.0";
   src = ./.;
   subPackages = [ "cmd/${pname}" ];
-  vendorHash = "sha256-kfCrhdzjob4d+pJdnmsUpMBG8eVSrjqXgN7epr/obME=";
+  vendorHash = "sha256-Xfzc42D8ow1ku/lFPwz6T7uWCtcKFxevxNCBYBO2iYk=";
+
+  env.CGO_ENABLED = 0;
+  ldflags = [
+    "-s"
+    "-w"
+  ];
 
   nativeBuildInputs = lib.optional withCompletion installShellFiles;
 
