@@ -32,6 +32,7 @@ func init() {
 	rootCmd.AddCommand(statusCmd)
 	rootCmd.AddCommand(attachCmd)
 	rootCmd.AddCommand(lifecycleCmd)
+	rootCmd.AddCommand(logsCmd)
 	rootCmd.AddCommand(&cobra.Command{
 		Use:   "version",
 		Short: "Print the version",
