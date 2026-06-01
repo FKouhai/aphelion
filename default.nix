@@ -2,6 +2,7 @@
   lib,
   buildGoModule,
   installShellFiles,
+  makeWrapper,
   pkg-config,
   systemd,
   pname,
@@ -24,7 +25,7 @@ buildGoModule (finalAttrs: {
   ];
 
   nativeBuildInputs = lib.optional withCompletion installShellFiles
-    ++ lib.optional withCGO pkg-config;
+    ++ lib.optionals withCGO [ pkg-config makeWrapper ];
   buildInputs = lib.optional withCGO systemd;
 
   postInstall = lib.optionalString withCompletion ''
@@ -32,6 +33,9 @@ buildGoModule (finalAttrs: {
       --bash <($out/bin/${pname} completion bash) \
       --fish <($out/bin/${pname} completion fish) \
       --zsh <($out/bin/${pname} completion zsh)
+  '' + lib.optionalString withCGO ''
+    wrapProgram $out/bin/${pname} \
+      --prefix LD_LIBRARY_PATH : ${lib.makeLibraryPath [ systemd ]}
   '';
 
   meta = {

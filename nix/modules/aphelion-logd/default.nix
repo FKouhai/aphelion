@@ -36,6 +36,13 @@ in
   config = lib.mkIf cfg.enable {
     networking.firewall.allowedTCPPorts = lib.mkIf cfg.openFirewall [ cfg.port ];
 
+    users.users.aphelion-logd = {
+      isSystemUser = true;
+      group = "aphelion-logd";
+      extraGroups = [ "systemd-journal" ];
+    };
+    users.groups.aphelion-logd = { };
+
     systemd.services.aphelion-logd = {
       description = "Aphelion journal log streaming daemon";
       wantedBy = [ "multi-user.target" ];
@@ -48,15 +55,12 @@ in
           "0.0.0.0:${toString cfg.port}"
         ];
 
-        DynamicUser = true;
-        SupplementaryGroups = [ "systemd-journal" ];
+        User = "aphelion-logd";
+        Group = "aphelion-logd";
 
         Restart = "on-failure";
         RestartSec = "5s";
 
-        ProtectSystem = "strict";
-        ProtectHome = true;
-        PrivateTmp = true;
         NoNewPrivileges = true;
       };
     };

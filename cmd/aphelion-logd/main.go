@@ -37,7 +37,7 @@ func logsHandler(w http.ResponseWriter, r *http.Request) {
 
 	j, err := sdjournal.NewJournal()
 	if err != nil {
-		c.Close(websocket.StatusInternalError, "journal open failed")
+		c.Close(websocket.StatusInternalError, "journal open failed: "+err.Error())
 		return
 	}
 	defer j.Close()
