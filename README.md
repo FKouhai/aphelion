@@ -25,6 +25,11 @@ your machine
 
 The CLI connects to the host over SSH, then port-forwards to the agent over that same SSH connection. No firewall rules are required on the host for normal use.
 
+## Demo
+
+[![asciicast](https://asciinema.org/a/DyvoK3FMWPMjKBII.svg)](https://asciinema.org/a/DyvoK3FMWPMjKBII)
+
+
 ## Installation
 
 ### Nix flake
