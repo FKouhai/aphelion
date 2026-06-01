@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"net"
+
+	"github.com/coder/websocket"
 )
 
 type AgentClient struct {
@@ -22,6 +24,29 @@ type agentRequest struct {
 type agentResponse struct {
 	Result json.RawMessage `json:"result,omitempty"`
 	Error  string          `json:"error,omitempty"`
+}
+
+type LogReader struct {
+	ctx  context.Context
+	conn *websocket.Conn
+	buf  []byte
+}
+
+func (l *LogReader) Read(b []byte) (int, error) {
+	for len(l.buf) == 0 {
+		_, msg, err := l.conn.Read(l.ctx)
+		if err != nil {
+			return 0, err
+		}
+		l.buf = append(msg, '\n')
+	}
+	n := copy(b, l.buf)
+	l.buf = l.buf[n:]
+	return n, nil
+}
+
+func (l *LogReader) Close() error {
+	return l.conn.Close(websocket.StatusNormalClosure, "")
 }
 
 // Parse generic method used to parse the raw messages
@@ -100,6 +125,18 @@ func (a *AgentClient) Metrics(ctx context.Context) (map[string]VMMetricsSample, 
 		return nil, err
 	}
 	return Parse[map[string]VMMetricsSample](raw)
+}
+
+func (a *AgentClient) Logs(ctx context.Context, vmName string, logdPort int) (*LogReader, error) {
+	ip, err := a.VMAddr(ctx, vmName)
+	if err != nil {
+		return nil, err
+	}
+	conn, _, err := websocket.Dial(ctx, fmt.Sprintf("ws://%s:%d/logs", ip, logdPort), nil)
+	if err != nil {
+		return nil, fmt.Errorf("connecting to aphelion-logd on %s: %w", vmName, err)
+	}
+	return &LogReader{ctx: ctx, conn: conn}, nil
 }
 
 // Console represents the machine console for the session
