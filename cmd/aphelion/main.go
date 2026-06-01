@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"os"
 
+	"aphelion/pkg/version"
+
 	"github.com/spf13/cobra"
 )
 
@@ -19,15 +21,22 @@ var rootCmd = &cobra.Command{
 var (
 	cfgFile   string
 	agentPort int
+	logdPort  int
 )
 
 func init() {
 	rootCmd.PersistentFlags().StringVar(&cfgFile, "config", "", "config file (default: ~/.config/aphelion/config.yaml)")
 	rootCmd.PersistentFlags().IntVar(&agentPort, "agent-port", 7373, "port the aphelion-agent listens on")
+	rootCmd.PersistentFlags().IntVar(&logdPort, "logd-port", 7374, "port the aphelion-logd listens on")
 
 	rootCmd.AddCommand(statusCmd)
 	rootCmd.AddCommand(attachCmd)
 	rootCmd.AddCommand(lifecycleCmd)
+	rootCmd.AddCommand(&cobra.Command{
+		Use:   "version",
+		Short: "Print the version",
+		Run:   func(cmd *cobra.Command, args []string) { fmt.Println(version.Version) },
+	})
 }
 
 func main() {
