@@ -1,12 +1,14 @@
 package main
 
 import (
+	"net/http"
+	"os"
+	"strings"
+
 	"github.com/coder/websocket"
 	"github.com/coder/websocket/wsjson"
 	"github.com/coreos/go-systemd/v22/sdjournal"
 	"github.com/spf13/cobra"
-	"net/http"
-	"os"
 )
 
 var rootCmd = &cobra.Command{
@@ -43,8 +45,8 @@ func logsHandler(w http.ResponseWriter, r *http.Request) {
 		c.Close(websocket.StatusInternalError, "seek failed")
 		return
 	}
-	// flush entries at the tail position
-	j.Previous()
+	// Rewind to show recent history before following new entries.
+	j.PreviousSkip(50)
 
 	ctx := r.Context()
 	for {
@@ -63,7 +65,11 @@ func logsHandler(w http.ResponseWriter, r *http.Request) {
 		if err != nil {
 			continue
 		}
-		if err := wsjson.Write(ctx, c, entry.Fields); err != nil {
+		safe := make(map[string]string, len(entry.Fields))
+		for k, v := range entry.Fields {
+			safe[k] = strings.ToValidUTF8(v, "�")
+		}
+		if err := wsjson.Write(ctx, c, safe); err != nil {
 			break
 		}
 	}

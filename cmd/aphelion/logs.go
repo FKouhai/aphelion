@@ -65,7 +65,7 @@ func runLogs(cmd *cobra.Command, args []string) error {
 		}
 		fmt.Fprintln(os.Stdout, formatLogEntry(fields))
 	}
-	return nil
+	return scanner.Err()
 }
 
 func formatLogEntry(fields map[string]string) string {
