@@ -30,7 +30,12 @@
 
       overlays.default = import ./nix/overlay.nix;
 
-      nixosModules.default = import ./nix/module.nix self;
+      nixosModules = {
+        aphelion = import ./nix/modules/aphelion self;
+        aphelion-agent = import ./nix/modules/aphelion-agent self;
+        aphelion-logd = import ./nix/modules/aphelion-logd self;
+        default = import ./nix/modules/aphelion-agent self;
+      };
 
       devShells = forAllSystems (pkgs: {
         default = import ./shell.nix { inherit pkgs; };

@@ -1,6 +1,6 @@
 # Aphelion
 
-CLI for managing [microvm.nix](https://github.com/astro/microvm.nix) VMs across NixOS hosts. Connect to VMs by name, inspect their state, and control their lifecycle — all tunnelled over an existing SSH connection to the host, with no extra ports exposed.
+CLI for managing [microvm.nix](https://github.com/astro/microvm.nix) VMs across NixOS hosts. Connect to VMs by name, inspect their state, control their lifecycle, and stream logs — all tunnelled over an existing SSH connection to the host, with no extra ports exposed.
 
 ## Architecture
 
@@ -11,8 +11,10 @@ your machine
        └──────────────────────────────► NixOS host (copernico)
                                           └─ aphelion-agent  :7373  ← TCP-forwarded over SSH
                                                │  QMP socket per VM
-                                               ├──► microvm@worker01  (libvirt/firecracker)
+                                               ├──► microvm@worker01
+                                               │      └─ aphelion-logd  :7374  ← direct to VM IP
                                                ├──► microvm@worker02
+                                               │      └─ aphelion-logd  :7374
                                                └──► ...
 ```
 
@@ -23,7 +25,9 @@ your machine
 - Resolves VM IP addresses by walking cgroup → QEMU PID → `/proc/<pid>/cmdline` → MAC → ARP table
 - Exports Prometheus metrics on port 9373
 
-The CLI connects to the host over SSH, then port-forwards to the agent over that same SSH connection. No firewall rules are required on the host for normal use.
+`aphelion-logd` runs inside each VM. It streams the systemd journal over a WebSocket connection on port 7374 when requested by the CLI.
+
+The CLI connects to the host over SSH, then port-forwards to the agent over that same connection. No firewall rules are required on the host for normal use.
 
 ## Demo
 
@@ -40,43 +44,80 @@ Add aphelion to your flake inputs:
 inputs.aphelion.url = "github:FKouhai/aphelion";
 ```
 
-#### CLI (`aphelion`)
-
-Install into your user profile or home-manager config:
-
-```nix
-environment.systemPackages = [ aphelion.packages.${system}.aphelion ];
-# or
-home.packages = [ aphelion.packages.${system}.aphelion ];
-```
-
-Or run it directly without installing:
-
-```
-nix run github:FKouhai/aphelion
-```
-
 #### nixpkgs overlay
 
-To expose `pkgs.aphelion` and `pkgs.aphelion-agent` in your own nixpkgs instance:
+To expose `pkgs.aphelion`, `pkgs.aphelion-agent`, and `pkgs.aphelion-logd` in your own nixpkgs instance:
 
 ```nix
 nixpkgs.overlays = [ aphelion.overlays.default ];
 ```
 
-### Agent (`aphelion-agent`) — NixOS module
+Or run the CLI directly without installing:
 
-Import the NixOS module on each host that runs microvms:
+```
+nix run github:FKouhai/aphelion
+```
+
+---
+
+### CLI (`aphelion`) — NixOS module
+
+Import `nixosModules.aphelion` on the machine where you run the CLI. This installs the binary and generates `~/.config/aphelion/config.yaml` from your Nix config:
 
 ```nix
 {
-  imports = [ aphelion.nixosModules.default ];
+  imports = [ aphelion.nixosModules.aphelion ];
+
+  programs.aphelion = {
+    enable = true;
+    hosts = [
+      {
+        displayName = "copernico";
+        address = "192.168.0.19";
+        username = "nixos";       # SSH user on the host
+        vmUsername = "nixos";     # SSH user inside VMs (used by attach)
+        # port = 22;              # host SSH port, defaults to 22
+      }
+    ];
+  };
+}
+```
+
+`displayName` is what you pass to every command as `<host>`.
+
+#### All module options — `programs.aphelion`
+
+| Option | Default | Description |
+|---|---|---|
+| `enable` | `false` | Install aphelion and generate the config file |
+| `package` | flake package | `aphelion` package to use |
+| `hosts` | `[]` | List of hosts to manage (see submodule options below) |
+
+Each entry in `hosts` accepts:
+
+| Option | Default | Description |
+|---|---|---|
+| `username` | — | SSH username for the host |
+| `vmUsername` | `""` | Default SSH username for VMs; falls back to `username` |
+| `address` | — | Hostname or IP address |
+| `displayName` | — | Identifier used in CLI commands and the TUI |
+| `port` | `null` | SSH port; defaults to 22 if unset |
+
+---
+
+### Agent (`aphelion-agent`) — NixOS module
+
+Import `nixosModules.aphelion-agent` on each NixOS host that runs microvms:
+
+```nix
+{
+  imports = [ aphelion.nixosModules.aphelion-agent ];
 
   services.aphelion-agent.enable = true;
 }
 ```
 
-The agent listens on `0.0.0.0:7373` by default. Because the CLI tunnels over SSH this port does not need to be open in the firewall. To allow direct external access (e.g. for Prometheus scraping from another host):
+The agent listens on `0.0.0.0:7373` by default. The CLI tunnels over SSH so this port does not need to be open in the firewall. To allow direct external access (e.g. for Prometheus scraping):
 
 ```nix
 services.aphelion-agent = {
@@ -85,7 +126,7 @@ services.aphelion-agent = {
 };
 ```
 
-#### All module options
+#### All module options — `services.aphelion-agent`
 
 | Option | Default | Description |
 |---|---|---|
@@ -98,20 +139,32 @@ services.aphelion-agent = {
 | `metricsInterval` | `15s` | Metrics collection interval (Go duration string) |
 | `openFirewall` | `false` | Open `port` and `metricsPort` in the firewall |
 
-## Configuration
+---
 
-The CLI reads `~/.config/aphelion/config.yaml` by default (`--config` to override).
+### Log daemon (`aphelion-logd`) — NixOS module
 
-```yaml
-hosts:
-  - display_name: copernico
-    address: 192.168.0.19
-    username: nixos        # SSH user on the host
-    vm_username: nixos     # SSH user inside VMs (used by attach)
-    # port: 22             # host SSH port, defaults to 22
+Import `nixosModules.aphelion-logd` inside each VM's NixOS configuration to enable log streaming:
+
+```nix
+{
+  imports = [ aphelion.nixosModules.aphelion-logd ];
+
+  services.aphelion-logd.enable = true;
+}
 ```
 
-`display_name` is what you pass to every command as `<host>`.
+The daemon runs as a dynamic user with access to the systemd journal and listens on `0.0.0.0:7374`. The CLI reaches it directly over the VM's bridge network IP (resolved via the agent).
+
+#### All module options — `services.aphelion-logd`
+
+| Option | Default | Description |
+|---|---|---|
+| `enable` | `false` | Enable the log daemon service |
+| `package` | flake package | `aphelion-logd` package to use |
+| `port` | `7374` | TCP port for the WebSocket log endpoint |
+| `openFirewall` | `false` | Open `port` in the firewall |
+
+---
 
 ## Usage
 
@@ -129,17 +182,25 @@ Open an interactive SSH session to a VM by name:
 
 ```
 aphelion attach <host> <vm>
-```
-
-```
 aphelion attach copernico worker01
 ```
 
 The VM is looked up by name through the agent; no need to know its IP. The session runs over the existing host SSH connection.
 
 Options:
-- `--user <name>` — override the SSH username (defaults to `vm_username` from config)
+- `--user <name>` — override the SSH username (defaults to `vmUsername` from config)
 - `--port <port>` — override the VM SSH port (default `22`)
+
+### Logs
+
+Stream the systemd journal from a VM in real time (requires `aphelion-logd` running inside the VM):
+
+```
+aphelion logs <host> <vm>
+aphelion logs copernico worker01
+```
+
+Each line is printed as `Jan 02 15:04:05 <unit>: <message>`. Press `Ctrl-C` to stop.
 
 ### VM lifecycle
 
@@ -154,6 +215,7 @@ aphelion vm resume  <host> <vm>
 ```
 --config <path>      config file (default ~/.config/aphelion/config.yaml)
 --agent-port <port>  agent port to forward to (default 7373)
+--logd-port <port>   logd port to connect to (default 7374)
 ```
 
 ## Building from source
@@ -161,6 +223,7 @@ aphelion vm resume  <host> <vm>
 ```
 go build ./cmd/aphelion/
 go build ./cmd/aphelion-agent/
+CGO_ENABLED=1 go build ./cmd/aphelion-logd/   # requires libsystemd-dev
 ```
 
 Tests:
