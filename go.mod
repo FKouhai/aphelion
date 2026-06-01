@@ -5,6 +5,8 @@ go 1.26.3
 require (
 	charm.land/bubbletea/v2 v2.0.6
 	github.com/charmbracelet/lipgloss v1.1.0
+	github.com/coder/websocket v1.8.14
+	github.com/coreos/go-systemd/v22 v22.7.0
 	github.com/digitalocean/go-qemu v0.0.0-20250212194115-ee9b0668d242
 	github.com/muesli/cancelreader v0.2.2
 	github.com/prometheus/client_golang v1.23.2

@@ -2,24 +2,30 @@
   lib,
   buildGoModule,
   installShellFiles,
+  pkg-config,
+  systemd,
   pname,
   withCompletion ? false,
+  withCGO ? false,
 }:
 
-buildGoModule {
+buildGoModule (finalAttrs: {
   inherit pname;
-  version = "0.1.0";
+  version = "0.5.0";
   src = ./.;
   subPackages = [ "cmd/${pname}" ];
-  vendorHash = "sha256-ysyPY2l19OISyIETAE3o3q41yxdeRJZNl0aeJJ5SEQ4=";
+  vendorHash = "sha256-COmkCWp17JUhSUnt81DqK8msswDYX0sx4iX7ssscgyg=";
 
-  env.CGO_ENABLED = 0;
+  env.CGO_ENABLED = if withCGO then 1 else 0;
   ldflags = [
     "-s"
     "-w"
+    "-X aphelion/pkg/version.Version=${finalAttrs.version}"
   ];
 
-  nativeBuildInputs = lib.optional withCompletion installShellFiles;
+  nativeBuildInputs = lib.optional withCompletion installShellFiles
+    ++ lib.optional withCGO pkg-config;
+  buildInputs = lib.optional withCGO systemd;
 
   postInstall = lib.optionalString withCompletion ''
     installShellCompletion --cmd ${pname} \
@@ -32,4 +38,4 @@ buildGoModule {
     description = "TUI for managing microvm.nix VMs across NixOS hosts";
     mainProgram = pname;
   };
-}
+})

@@ -20,6 +20,7 @@
           pname = "aphelion";
           withCompletion = true;
         };
+        aphelion-logd = pkgs.callPackage ./default.nix { pname = "aphelion-logd"; withCGO = true; };
         aphelion-agent = pkgs.callPackage ./default.nix { pname = "aphelion-agent"; };
         default = pkgs.callPackage ./default.nix {
           pname = "aphelion";
